@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BDM Feuille de temps</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    body{margin:0;padding:1rem;background:#f6f7fb;color:#0b1220}
+    .container{max-width:980px;margin:auto;background:#fff;padding:1rem;border-radius:10px;box-shadow:0 4px 18px rgba(11,18,32,.06)}
+    h1{margin:0 0 1rem;font-size:1.2rem}
+    h3{margin:.25rem 0 .75rem}
+    .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem;margin-bottom:.5rem}
+    input,select,button,textarea{padding:.55rem;border:1px solid #dfe6f0;border-radius:8px}
+    textarea{min-height:70px;resize:vertical}
+    .muted{color:#666;font-size:.9rem}
+    .controls{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0;align-items:center}
+    table{width:100%;border-collapse:collapse;margin-top:.5rem}
+    th,td{padding:.5rem;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:top}
+    tfoot td{font-weight:700}
+    .danger{background:#fff0f0;border-color:#ffd6d6}
+    .wday-grey{background:#f1f3f6}
+    .badge{display:inline-block;padding:.15rem .45rem;border-radius:999px;background:#eef2f7;font-size:.8rem}
+    .card{border:1px solid #eef2f7;border-radius:10px;padding:.75rem;margin-top:.75rem}
+    .printOnly{display:none}
+    .toggle{display:flex;align-items:center;gap:.5rem}
+    .toggle input{width:auto}
+    .statusLine{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.25rem}
+    .statusPill{display:inline-block;padding:.2rem .55rem;border-radius:999px;background:#eef2f7;font-size:.85rem}
+    .hidden{display:none}
+    @media (max-width:600px){ .row{grid-template-columns:1fr} }
+
+    /* Vue mensuelle */
+    .viewSwitch{display:flex;gap:.5rem;align-items:center}
+    .pillBtn{padding:.35rem .6rem;border:1px solid #dfe6f0;border-radius:999px;background:#fff}
+    .pillBtn.active{background:#0b1220;color:#fff;border-color:#0b1220}
+    .monthGrid td,.monthGrid th{border:1px solid #eef2f7}
+    .monthGrid th{background:#f6f7fb}
+    .right{ text-align:right }
+    .center{ text-align:center }
+
+    /* ========= MODAL MANAGER (caché) ========= */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:1rem;z-index:9999}
+    .modal{background:#fff;border-radius:12px;max-width:760px;width:100%;padding:1rem;border:1px solid #e6ebf3;box-shadow:0 12px 40px rgba(0,0,0,.2)}
+    .modalHeader{display:flex;justify-content:space-between;align-items:center;gap:.75rem}
+    .modalHeader h3{margin:0}
+    .closeBtn{border:1px solid #dfe6f0;background:#fff;border-radius:8px;padding:.45rem .65rem}
+
+    /* =========================
+       PDF / PRINT (présentation au mois)
+       ========================= */
+    @media print {
+      @page { size: A4; margin: 12mm; }
+      body { background:#fff !important; padding:0 !important; color:#000 !important; }
+      .container { max-width:none !important; box-shadow:none !important; border-radius:0 !important; padding:0 !important; }
+      .noPrint, .controls, button, input, select, textarea, .overlay { display:none !important; }
+      .printOnly { display:block !important; }
+
+      h2 { font-size:16pt !important; margin:0 0 4mm 0 !important; }
+      .muted { color:#000 !important; font-size:10pt !important; }
+
+      table { width:100% !important; border-collapse:collapse !important; margin-top:4mm !important; font-size:9.5pt !important; }
+      th, td { border:1px solid #bbb !important; padding:2.5mm 2mm !important; }
+      th { background:#f2f2f2 !important; font-weight:700 !important; }
+
+      .wday-grey { background:#e9ecef !important; }
+      .badge { display:none !important; }
+      tr { break-inside:avoid; page-break-inside:avoid; }
+
+      .printFooter {
+        margin-top:6mm !important;
+        border:1px solid #bbb !important;
+        padding:4mm !important;
+        font-size:10pt !important;
+      }
+      .printFooter .line { margin-top:3mm !important; }
+      hr { border:none !important; border-top:1px solid #bbb !important; margin:4mm 0 !important; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="container">
+  <!-- 5 taps rapides sur ce titre => manager (caché) -->
+  <h1 id="appTitle">BDM — Feuille de temps</h1>
+
+  <div class="statusLine noPrint">
+    <span class="statusPill" id="whoPill">Salarié : —</span>
+    <span class="statusPill" id="monthPill">Mois : —</span>
+    <span class="statusPill" id="statusPill">Statut : Brouillon</span>
+
+    <span class="viewSwitch" style="margin-left:auto">
+      <button id="btnList" class="pillBtn active" type="button">Liste</button>
+      <button id="btnMonth" class="pillBtn" type="button">Mois</button>
+    </span>
+  </div>
+
+  <section id="employeeView">
+    <div class="row">
+      <select id="empSelect"></select>
+      <input type="month" id="monthSelect" />
+      <select id="shiftSelect" required>
+        <option value="">— Horaires prédéfinis —</option>
+        <option value="05:00-12:00">05:00 → 12:00</option>
+        <option value="06:00-13:00">06:00 → 13:00</option>
+        <option value="07:00-14:00">07:00 → 14:00</option>
+        <option value="13:00-16:00">13:00 → 16:00</option>
+        <option value="13:00-20:00">13:00 → 20:00</option>
+        <option value="21:00-05:00">21:00 → 05:00</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label class="toggle">
+        <input type="checkbox" id="exceptionToggle" />
+        Exception (changement d’horaire)
+      </label>
+      <input type="date" id="date" />
+      <input type="text" id="task" placeholder="Tâche / Poste" />
+    </div>
+
+    <div class="row">
+      <input type="time" id="start" step="900" disabled />
+      <input type="time" id="end" step="900" disabled />
+      <button id="addBtn" type="button">Ajouter</button>
+    </div>
+
+    <div class="controls noPrint">
+      <button id="printPdfBtn" type="button">Générer PDF</button>
+      <button id="exportCsvBtn" type="button">Exporter CSV</button>
+      <button id="clearMonthBtn" type="button" class="danger">Supprimer le mois</button>
+      <span class="muted" id="savedInfo"></span>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <textarea id="monthComment" maxlength="500" placeholder="Commentaire mensuel (demandes diverses, acomptes reçus, etc.) — max 500 caractères"></textarea>
+      </div>
+      <div class="row">
+        <input type="text" id="signatureName" placeholder="Signature salarié (nom/prénom)" />
+        <button id="submitBtn" type="button">Soumettre le mois (verrouille)</button>
+      </div>
+      <div class="muted">
+        Mercredi & jeudi sont <span class="badge">grisés</span>. Après soumission, le mois est verrouillé (correction via manager).
+      </div>
+    </div>
+
+    <!-- VUE LISTE -->
+    <div id="listView">
+      <table id="timesheet">
+        <thead>
+          <tr>
+            <th>Date</th><th>Jour</th><th>Tâche</th><th>Horaire</th><th>Début</th><th>Fin</th><th>Durée (h)</th><th class="noPrint"></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr><td colspan="6">Total</td><td id="totalHours">0</td><td class="noPrint"></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- VUE MOIS (présentation au mois) -->
+    <div id="monthView" class="hidden">
+      <table class="monthGrid" id="monthTable">
+        <thead>
+          <tr>
+            <th class="center">Jour</th>
+            <th>Date</th>
+            <th>Tâche / Poste</th>
+            <th>Horaire</th>
+            <th class="center">Début</th>
+            <th class="center">Fin</th>
+            <th class="right">Durée (h)</th>
+          </tr>
+        </thead>
+        <tbody id="monthTbody"></tbody>
+        <tfoot>
+          <tr><td colspan="6">Total</td><td class="right" id="monthTotalHours">0</td></tr>
+        </tfoot>
+      </table>
+      <p class="muted">Chaque jour du mois est listé. Mercredi/jeudi grisés. Si plusieurs lignes sur un jour : elles sont concaténées.</p>
+    </div>
+
+    <!-- PDF header -->
+    <div class="printOnly">
+      <h2>Feuille de temps — BDM (présentation mensuelle)</h2>
+      <div class="muted" id="printMeta"></div>
+      <hr/>
+    </div>
+
+    <!-- PDF footer -->
+    <div class="printOnly printFooter">
+      <div><strong>Statut :</strong> <span id="printStatus"></span></div>
+      <div><strong>Commentaire mensuel :</strong> <span id="printComment"></span></div>
+      <div class="line"><strong>Signature salarié :</strong> <span id="printSignature"></span></div>
+    </div>
+  </section>
+</div>
+
+<!-- Modal manager (caché) -->
+<div class="overlay" id="mgrOverlay" aria-hidden="true">
+  <div class="modal">
+    <div class="modalHeader">
+      <h3>Manager — Administration</h3>
+      <button class="closeBtn" id="mgrClose" type="button">Fermer</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <input type="password" id="managerCode" placeholder="Code manager" />
+        <button id="loginBtn" type="button">Déverrouiller</button>
+        <button id="logoutBtn" type="button" class="hidden">Verrouiller</button>
+      </div>
+      <div class="muted">Code attendu : <strong>BDM2026</strong></div>
+    </div>
+
+    <div id="managerPanel" class="hidden">
+      <div class="card">
+        <h3>Sélection salarié (téléphone dédié)</h3>
+        <div class="row">
+          <select id="mgrEmpSelectPhone"></select>
+          <button id="bindPhoneBtn" type="button">Figer sur ce téléphone</button>
+          <button id="unbindPhoneBtn" type="button" class="danger">Réactiver la liste</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Gestion des salariés</h3>
+        <div class="row">
+          <input type="text" id="newEmp" placeholder="Ajouter un salarié (Nom Prénom)" />
+          <button id="addEmpBtn" type="button">Ajouter</button>
+        </div>
+        <div id="empList"></div>
+      </div>
+
+      <div class="card">
+        <h3>Déverrouiller un mois soumis</h3>
+        <div class="row">
+          <select id="mgrEmpSelect"></select>
+          <input type="month" id="mgrMonthSelect" />
+          <button id="unlockMonthBtn" type="button">Déverrouiller le mois</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="src/app.js"></script>
+</body>
+</html>
